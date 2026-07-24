@@ -407,3 +407,61 @@ class SearchResult(BaseModel):
     title: str
     snippet: str
     relevance_score: float
+
+
+# --- Embedding (Phase 2) ---
+
+
+class EmbeddingResponse(BaseModel):
+    id: int
+    entity_type: str
+    entity_id: int
+    chunk_text: str
+    model_name: str
+    has_vector: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        protected_namespaces = ()
+
+
+class BackfillResult(BaseModel):
+    stories: int
+    bugs: int
+    events: int
+
+
+# --- Full-Chain RCA (Phase 2, FR-6) ---
+
+
+class RCAChainStage(BaseModel):
+    stage: str
+    description: str
+    responsible_role: str
+    status: str  # origin, missed, passed_through, not_applicable
+    note: Optional[str] = None
+
+
+class RCAChainAnalysisResponse(BaseModel):
+    id: int
+    bug_id: int
+    chain_stages: list[dict]
+    root_origin_stage: str
+    contributing_factors: Optional[list] = None
+    ownership_split: Optional[dict] = None
+    ai_confidence: Optional[float] = None
+    reasoning: Optional[str] = None
+    analyzed_by: str
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChainSummaryResponse(BaseModel):
+    total_analyzed: int
+    origin_distribution: dict
+    common_missed_stages: dict

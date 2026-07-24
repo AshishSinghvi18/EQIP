@@ -12,22 +12,33 @@ from app.models.models import (
     CoachingRecommendation,
     Dispute,
     QualityForecast,
+    Story,
     UserBadge,
 )
 from app.schemas import (
+    BackfillResult,
     BadgeCreate,
     BadgeResponse,
+    ChainSummaryResponse,
     CoachingRecommendationResponse,
     DisputeCreate,
     DisputeResolve,
     DisputeResponse,
+    EmbeddingResponse,
     QualityForecastResponse,
+    RCAChainAnalysisResponse,
     SearchResult,
     UserBadgeResponse,
 )
 from app.services.ai_service import generate_coaching_recommendations, suggest_root_cause
+from app.services.embedding_service import (
+    backfill_embeddings,
+    embed_bug,
+    embed_story,
+)
 from app.services.forecast_service import generate_release_forecast, get_engineering_health_index
-from app.services.search_service import search_entities
+from app.services.rca_service import analyze_full_chain, get_chain_analysis, get_chain_summary
+from app.services.search_service import find_similar_bugs, search_entities
 
 router = APIRouter(tags=["intelligence"])
 
@@ -39,13 +50,20 @@ router = APIRouter(tags=["intelligence"])
 def ai_suggest_root_cause(bug_id: int, db: Session = Depends(get_db)):
     """AI suggests root cause, owner, severity for a bug (FR-8).
 
+    Uses LLM reasoning (Qwen3/DeepSeek V4 via OpenAI-compatible API) when available,
+    falls back to keyword-based rule engine.
     Returns suggestions with confidence. Does NOT affect scores until EM approves (FR-9).
     """
     bug = db.query(Bug).filter(Bug.id == bug_id).first()
     if not bug:
         raise HTTPException(status_code=404, detail="Bug not found")
 
-    suggestion = suggest_root_cause(bug)
+    # Get story context for better analysis
+    story = None
+    if bug.story_id:
+        story = db.query(Story).filter(Story.id == bug.story_id).first()
+
+    suggestion = suggest_root_cause(bug, story)
 
     # Store suggestion on the bug (does not affect scores)
     bug.ai_suggested = suggestion
@@ -56,6 +74,7 @@ def ai_suggest_root_cause(bug_id: int, db: Session = Depends(get_db)):
     return {
         "bug_id": bug_id,
         "suggestion": suggestion,
+        "method": suggestion.get("method", "keyword_rules"),
         "note": "This suggestion does NOT affect any score until approved by an EM (FR-9).",
     }
 
@@ -100,14 +119,164 @@ def approve_ai_suggestion(
 def semantic_search(
     q: str = Query(..., min_length=2, description="Search query"),
     limit: int = Query(20, le=100),
+    semantic: bool = Query(True, description="Enable semantic search via pgvector"),
     db: Session = Depends(get_db),
 ):
-    """Natural-language search across stories, bugs, and quality events (FR-10).
+    """Hybrid search: semantic similarity (pgvector) + keyword matching (FR-10).
 
-    Currently uses keyword matching. In production, uses pgvector embeddings
-    for true semantic similarity search.
+    Natural-language search across stories, bugs, and quality events.
+    Examples: "validation bugs in Auth", "find defects similar to BUG-1245"
+    Uses vector embeddings (BGE-M3) for true semantic similarity when available.
     """
-    return search_entities(db, q, limit)
+    return search_entities(db, q, limit, use_semantic=semantic)
+
+
+@router.get("/search/similar/{bug_id}", response_model=list[SearchResult])
+def find_similar(
+    bug_id: int,
+    limit: int = Query(10, le=50),
+    db: Session = Depends(get_db),
+):
+    """Find bugs similar to a given bug using semantic similarity (FR-10).
+
+    Implements "find defects similar to BUG-1245" from Design Spec §7.3.
+    """
+    results = find_similar_bugs(db, bug_id, limit)
+    if not results:
+        bug = db.query(Bug).filter(Bug.id == bug_id).first()
+        if not bug:
+            raise HTTPException(status_code=404, detail="Bug not found")
+    return results
+
+
+# --- Full-Chain RCA (Phase 2, FR-6) ---
+
+
+@router.post("/rca/analyze/{bug_id}", response_model=RCAChainAnalysisResponse)
+def perform_chain_analysis(bug_id: int, db: Session = Depends(get_db)):
+    """Perform full-chain root cause analysis for a bug (FR-6).
+
+    Traces the defect through the full delivery chain:
+    Requirement → Development → Code Review → Testing → Automation → UAT → Release → Production
+
+    Determines:
+    - TRUE origin stage (where the problem started)
+    - Which stages should have caught it but didn't
+    - Ownership split across contributing roles
+
+    Uses LLM reasoning when available; falls back to rule-based analysis.
+    Result does NOT affect scores until EM approves (FR-9).
+    """
+    bug = db.query(Bug).filter(Bug.id == bug_id).first()
+    if not bug:
+        raise HTTPException(status_code=404, detail="Bug not found")
+
+    analysis = analyze_full_chain(db, bug_id)
+    if not analysis:
+        raise HTTPException(status_code=500, detail="Chain analysis failed")
+    return analysis
+
+
+@router.get("/rca/{bug_id}", response_model=RCAChainAnalysisResponse)
+def get_bug_chain_analysis(bug_id: int, db: Session = Depends(get_db)):
+    """Get existing full-chain RCA for a bug."""
+    analysis = get_chain_analysis(db, bug_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="No chain analysis found for this bug")
+    return analysis
+
+
+@router.post("/rca/{analysis_id}/approve")
+def approve_chain_analysis(
+    analysis_id: int,
+    approved_by: int = Query(..., description="EM user ID"),
+    db: Session = Depends(get_db),
+):
+    """EM approves a full-chain RCA analysis (FR-9).
+
+    Once approved, the ownership split from the analysis can affect scores.
+    """
+    from app.models.models import RCAChainAnalysis
+
+    analysis = db.query(RCAChainAnalysis).filter(RCAChainAnalysis.id == analysis_id).first()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if analysis.approved_by:
+        raise HTTPException(status_code=400, detail="Already approved")
+
+    analysis.approved_by = approved_by
+    analysis.approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(analysis)
+
+    return {
+        "analysis_id": analysis_id,
+        "status": "approved",
+        "approved_by": approved_by,
+        "ownership_split": analysis.ownership_split,
+    }
+
+
+@router.get("/rca/summary/chain", response_model=ChainSummaryResponse)
+def get_rca_chain_summary(
+    project_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get aggregated chain analysis summary (Design Spec §10.3 chain view).
+
+    Shows where defects originate in the delivery chain and which stages
+    commonly miss them.
+    """
+    return get_chain_summary(db, project_id)
+
+
+# --- Embedding Management (Phase 2) ---
+
+
+@router.post("/embeddings/backfill", response_model=BackfillResult)
+def backfill_all_embeddings(
+    entity_type: str | None = Query(None, description="story, bug, or event"),
+    db: Session = Depends(get_db),
+):
+    """Backfill embeddings for entities that don't have vectors yet.
+
+    Run this after setting up pgvector or switching embedding models.
+    Generates vector embeddings for all stories, bugs, and quality events.
+    """
+    counts = backfill_embeddings(db, entity_type)
+    return BackfillResult(**counts)
+
+
+@router.post("/embeddings/story/{story_id}")
+def embed_single_story(story_id: int, db: Session = Depends(get_db)):
+    """Generate/update embedding for a specific story."""
+    story = db.query(Story).filter(Story.id == story_id).first()
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    result = embed_story(db, story)
+    return {
+        "entity_type": "story",
+        "entity_id": story_id,
+        "has_vector": result.vector is not None if result else False,
+        "model": result.model_name if result else None,
+    }
+
+
+@router.post("/embeddings/bug/{bug_id}")
+def embed_single_bug(bug_id: int, db: Session = Depends(get_db)):
+    """Generate/update embedding for a specific bug."""
+    bug = db.query(Bug).filter(Bug.id == bug_id).first()
+    if not bug:
+        raise HTTPException(status_code=404, detail="Bug not found")
+
+    result = embed_bug(db, bug)
+    return {
+        "entity_type": "bug",
+        "entity_id": bug_id,
+        "has_vector": result.vector is not None if result else False,
+        "model": result.model_name if result else None,
+    }
 
 
 # --- Dispute Handling (FR-16) ---
