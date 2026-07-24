@@ -8,6 +8,7 @@ import Leaderboard from "./pages/Leaderboard";
 import Search from "./pages/Search";
 import Coaching from "./pages/Coaching";
 import ForecastPage from "./pages/Forecast";
+import Trends from "./pages/Trends";
 
 function App() {
   return (
@@ -68,6 +69,12 @@ function App() {
             🔍 Search
           </Link>
           <Link
+            to="/trends"
+            style={{ color: "#e0e0e0", textDecoration: "none" }}
+          >
+            📈 Trends
+          </Link>
+          <Link
             to="/forecast"
             style={{ color: "#e0e0e0", textDecoration: "none" }}
           >
@@ -83,6 +90,7 @@ function App() {
             <Route path="/scores" element={<Scores />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/coaching" element={<Coaching />} />
+            <Route path="/trends" element={<Trends />} />
             <Route path="/forecast" element={<ForecastPage />} />
             <Route path="/search" element={<Search />} />
           </Routes>
