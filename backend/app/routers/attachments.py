@@ -67,23 +67,33 @@ async def upload_attachment(
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 50MB.")
 
-    # Generate unique storage path
-    unique_name = f"{uuid.uuid4().hex}_{filename}"
+    # Sanitize filename to prevent path traversal
+    safe_basename = os.path.basename(filename).replace("..", "").strip()
+    if not safe_basename:
+        safe_basename = "attachment" + ext
+
+    # Generate unique storage path using only UUID (no user-controlled path components)
+    unique_name = f"{uuid.uuid4().hex}{ext}"
     story_dir = UPLOAD_DIR / str(story_id)
     story_dir.mkdir(parents=True, exist_ok=True)
     file_path = story_dir / unique_name
 
+    # Verify the resolved path is within UPLOAD_DIR to prevent path traversal
+    resolved_path = file_path.resolve()
+    if not str(resolved_path).startswith(str(UPLOAD_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
     # Save file
-    with open(file_path, "wb") as f:
+    with open(resolved_path, "wb") as f:
         f.write(content)
 
     # Create database record
     attachment = Attachment(
         story_id=story_id,
-        filename=filename,
+        filename=safe_basename,
         file_type=ALLOWED_EXTENSIONS[ext],
         file_size=file_size,
-        file_path=str(file_path),
+        file_path=str(resolved_path),
         uploaded_by=uploaded_by,
         description=description,
     )
@@ -109,11 +119,16 @@ def download_attachment(attachment_id: int, db: Session = Depends(get_db)):
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if not os.path.exists(attachment.file_path):
+    # Validate file path is within upload directory
+    resolved_path = Path(attachment.file_path).resolve()
+    if not str(resolved_path).startswith(str(UPLOAD_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     return FileResponse(
-        path=attachment.file_path,
+        path=str(resolved_path),
         filename=attachment.filename,
         media_type="application/octet-stream",
     )
