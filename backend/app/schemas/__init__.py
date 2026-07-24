@@ -398,6 +398,58 @@ class QualityForecastResponse(BaseModel):
         from_attributes = True
 
 
+# --- Trend & Benchmarking (Phase 4) ---
+
+
+class TrendPeriod(BaseModel):
+    period: str
+    sprint_id: Optional[int] = None
+    stories: int
+    bugs: int
+    bug_density: float
+    completion_rate: float
+    positive_event_ratio: float
+
+
+class TrendForecast(BaseModel):
+    direction: str
+    bug_density_trend: str
+    completion_trend: str
+    predicted_bug_density: float
+    predicted_completion_rate: float
+    confidence: float
+
+
+class QualityTrendResponse(BaseModel):
+    project_id: int
+    periods: list[TrendPeriod]
+    forecast: TrendForecast
+
+
+class ProjectBenchmark(BaseModel):
+    project_id: int
+    project_name: str
+    health_index: float
+    zero_bug_rate: float
+    production_stability: float
+    bug_density: float
+    total_stories: int
+    total_bugs: int
+
+
+class OrgBenchmarkResponse(BaseModel):
+    org_health_index: float
+    org_bug_density: float
+    project_count: int
+    projects: list[ProjectBenchmark]
+
+
+class HealthIndexResponse(BaseModel):
+    health_index: float
+    components: dict
+    totals: dict
+
+
 # --- Search ---
 
 
