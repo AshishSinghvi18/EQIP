@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #0f172a;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(6, 182, 212, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.2), transparent 32%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 80%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.8);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.55);
+}
+
+@layer components {
+  .glass-card {
+    @apply relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-glow backdrop-blur-xl;
+  }
+
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 45%, rgba(6, 182, 212, 0.06));
+    pointer-events: none;
+  }
+
+  .panel-header {
+    @apply mb-5 flex items-start justify-between gap-3;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.24em] text-slate-400;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-cyan-300 via-cyan-200 to-violet-300 bg-clip-text text-transparent;
+  }
+
+  .soft-border {
+    @apply border border-white/10;
+  }
+}
+
+.metric-glow {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 45px rgba(15, 23, 42, 0.3);
+}
+
+.heatmap-cell {
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.heatmap-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.28);
+}
+
+.flow-line {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.22), rgba(139, 92, 246, 0.3));
+}
