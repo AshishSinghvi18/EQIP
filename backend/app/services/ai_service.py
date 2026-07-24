@@ -4,14 +4,17 @@ Design principles (from EQIP Design Spec §7):
 - AI suggests, humans decide
 - Proposes root cause + category, origin stage/owner, severity, confidence
 - No AI suggestion affects a score/rank/badge until EM approves (FR-9)
-- Uses open-weight models via OpenAI-compatible API
+- Uses open-weight models via OpenAI-compatible API (Qwen3/DeepSeek V4)
+- Falls back to rule-based keyword analysis when LLM is unavailable
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.models import (
     Bug,
     CoachingRecommendation,
@@ -22,6 +25,8 @@ from app.models.models import (
     Story,
     UserRole,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Root cause keyword mapping for rule-based suggestions
@@ -85,13 +90,171 @@ ORIGIN_STAGE_MAP = {
 }
 
 
-def suggest_root_cause(bug: Bug) -> dict:
+def suggest_root_cause(bug: Bug, story: Optional[Story] = None) -> dict:
     """Suggest root cause, origin stage, severity, and ownership split for a bug.
 
     Returns AI suggestion dict with confidence score.
-    Uses keyword-based analysis (rule engine) as the default;
-    in production, this would call an LLM via OpenAI-compatible API.
+    Tries LLM-based analysis first; falls back to keyword-based rule engine.
     """
+    # Try LLM-based suggestion first
+    llm_result = _llm_suggest_root_cause(bug, story)
+    if llm_result:
+        return llm_result
+
+    # Fall back to keyword-based analysis
+    return _keyword_suggest_root_cause(bug)
+
+
+def _llm_suggest_root_cause(bug: Bug, story: Optional[Story] = None) -> Optional[dict]:
+    """Use LLM (OpenAI-compatible API) to suggest root cause analysis.
+
+    Uses open-weight models (Qwen3, DeepSeek V4) via configurable API endpoint.
+    """
+    try:
+        from openai import OpenAI
+
+        if not settings.LLM_API_KEY and settings.LLM_API_BASE_URL == "http://localhost:11434/v1":
+            client = OpenAI(
+                base_url=settings.LLM_API_BASE_URL,
+                api_key="not-needed",
+                timeout=settings.LLM_TIMEOUT,
+            )
+        elif settings.LLM_API_KEY:
+            client = OpenAI(
+                base_url=settings.LLM_API_BASE_URL,
+                api_key=settings.LLM_API_KEY,
+                timeout=settings.LLM_TIMEOUT,
+            )
+        else:
+            return None
+    except Exception as e:
+        logger.warning(f"LLM client creation failed: {e}")
+        return None
+
+    # Build context
+    story_context = ""
+    if story:
+        story_context = (
+            f"\nRelated Story: {story.title}\n"
+            f"Acceptance Criteria: {story.acceptance_criteria or 'Not specified'}\n"
+            f"Module: {story.module or 'Unknown'}\n"
+        )
+
+    categories = ", ".join(c.value for c in RootCauseCategory)
+    stages = ", ".join(s.value for s in OriginStage)
+    severities = ", ".join(s.value for s in BugSeverity)
+
+    prompt = f"""Analyze this software bug and suggest its root cause classification.
+
+Bug ID: {bug.bug_id}
+Summary: {bug.summary}
+Description: {bug.description or 'No description provided'}
+Current Severity: {bug.severity.value}
+Detected Stage: {bug.detected_stage.value if bug.detected_stage else 'Unknown'}
+{story_context}
+
+Classify using these categories:
+- Root Cause Categories: {categories}
+- Origin Stages: {stages}
+- Severity Levels: {severities}
+
+Respond in this exact format (one item per line):
+ROOT_CAUSE_CATEGORY: [one category from the list]
+ORIGIN_STAGE: [one stage from the list]
+SEVERITY: [one severity from the list]
+OWNERSHIP: [role:percentage pairs summing to 100, e.g. developer:70,tester:30]
+CONFIDENCE: [0.0 to 1.0]
+REASONING: [1-2 sentence explanation]"""
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.LLM_MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a software quality analyst. Classify bugs by their root cause, "
+                        "origin stage in the delivery chain, and severity. Be precise and concise."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=300,
+        )
+
+        result_text = response.choices[0].message.content
+        return _parse_llm_suggestion(result_text, bug)
+    except Exception as e:
+        logger.warning(f"LLM suggestion failed: {e}")
+        return None
+
+
+def _parse_llm_suggestion(text: str, bug: Bug) -> Optional[dict]:
+    """Parse structured LLM response into suggestion dict."""
+    try:
+        parsed = {}
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("ROOT_CAUSE_CATEGORY:"):
+                parsed["category"] = line.split(":", 1)[1].strip().lower()
+            elif line.startswith("ORIGIN_STAGE:"):
+                parsed["origin"] = line.split(":", 1)[1].strip().lower()
+            elif line.startswith("SEVERITY:"):
+                parsed["severity"] = line.split(":", 1)[1].strip().lower()
+            elif line.startswith("OWNERSHIP:"):
+                ownership_str = line.split(":", 1)[1].strip()
+                parsed["ownership"] = _parse_ownership_str(ownership_str)
+            elif line.startswith("CONFIDENCE:"):
+                try:
+                    parsed["confidence"] = float(line.split(":", 1)[1].strip())
+                except ValueError:
+                    parsed["confidence"] = 0.5
+            elif line.startswith("REASONING:"):
+                parsed["reasoning"] = line.split(":", 1)[1].strip()
+
+        if "category" not in parsed:
+            return None
+
+        # Validate and map to enums
+        category_map = {c.value: c for c in RootCauseCategory}
+        stage_map = {s.value: s for s in OriginStage}
+        severity_map = {s.value: s for s in BugSeverity}
+
+        category = category_map.get(parsed.get("category", ""), RootCauseCategory.UNKNOWN)
+        origin = stage_map.get(parsed.get("origin", ""), OriginStage.DEVELOPMENT)
+        severity = severity_map.get(parsed.get("severity", ""), bug.severity)
+
+        return {
+            "root_cause_category": category.value,
+            "origin_stage": origin.value,
+            "severity": severity.value,
+            "ownership_split": parsed.get("ownership", {"developer": 70, "tester": 30}),
+            "confidence": min(max(parsed.get("confidence", 0.5), 0.0), 1.0),
+            "reasoning": parsed.get("reasoning", "LLM-based analysis"),
+            "method": "llm",
+            "model": settings.LLM_MODEL_NAME,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to parse LLM suggestion: {e}")
+        return None
+
+
+def _parse_ownership_str(ownership_str: str) -> dict:
+    """Parse ownership string like 'developer:70,tester:30'."""
+    ownership = {}
+    for pair in ownership_str.split(","):
+        parts = pair.strip().split(":")
+        if len(parts) == 2:
+            try:
+                ownership[parts[0].strip()] = int(parts[1].strip())
+            except ValueError:
+                pass
+    return ownership if ownership else {"developer": 70, "tester": 30}
+
+
+def _keyword_suggest_root_cause(bug: Bug) -> dict:
+    """Keyword-based root cause suggestion (rule engine fallback)."""
     text = f"{bug.summary} {bug.description or ''}".lower()
 
     # Find best matching root cause category
@@ -126,6 +289,7 @@ def suggest_root_cause(bug: Bug) -> dict:
         "reasoning": f"Based on keyword analysis: detected '{best_category.value}' "
                      f"pattern with {round(confidence * 100)}% confidence. "
                      f"Origin mapped to '{origin_stage.value}' stage.",
+        "method": "keyword_rules",
     }
 
 

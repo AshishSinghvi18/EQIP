@@ -400,6 +400,50 @@ class CoachingRecommendation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Embedding(Base):
+    """Vector embeddings for semantic search (Design Spec §8.5, FR-10).
+
+    Stores text chunks with their vector representation for pgvector similarity search.
+    Dimension follows the embedding model (1024 for BGE-M3).
+    """
+
+    __tablename__ = "embeddings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String(50), nullable=False, index=True)  # story, bug, event
+    entity_id = Column(Integer, nullable=False, index=True)
+    chunk_text = Column(Text, nullable=False)
+    # Vector stored as JSON array for SQLite compatibility; in production with
+    # PostgreSQL + pgvector, this would be a Vector(1024) column.
+    vector = Column(JSON, nullable=True)
+    model_name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RCAChainAnalysis(Base):
+    """Full-chain root cause analysis record (Design Spec §5, FR-6).
+
+    Traces a defect through the full delivery chain and records the analysis.
+    """
+
+    __tablename__ = "rca_chain_analyses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bug_id = Column(Integer, ForeignKey("bugs.id"), nullable=False, index=True)
+    chain_stages = Column(JSON, nullable=False)  # ordered list of chain stage analyses
+    root_origin_stage = Column(Enum(OriginStage), nullable=False)
+    contributing_factors = Column(JSON, nullable=True)  # factors at each stage
+    ownership_split = Column(JSON, nullable=True)  # percentage per role
+    ai_confidence = Column(Float, nullable=True)
+    reasoning = Column(Text, nullable=True)
+    analyzed_by = Column(String(50), default="ai")  # "ai" or "human"
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    bug = relationship("Bug")
+
+
 class QualityForecast(Base):
     """Release-risk prediction and quality forecast (Phase 4)."""
 
