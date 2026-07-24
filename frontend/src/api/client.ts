@@ -39,7 +39,7 @@ export async function requestWithFallback<T>(path: string, fallback: T, init?: R
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
-      console.warn(`EQIP API unavailable for ${path}; using mock data.`, error);
+      console.warn('EQIP API unavailable; using mock data.', path, error);
     }
 
     return { data: fallback, source: 'mock' };
