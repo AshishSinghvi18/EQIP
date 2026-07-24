@@ -4,9 +4,10 @@ Design principles (from EQIP Design Spec §16):
 - Release-risk prediction based on historical quality patterns
 - Quality forecast using trend analysis
 - Engineering-health index
+- Org benchmarking across projects
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import func
@@ -16,8 +17,10 @@ from app.models.models import (
     Bug,
     BugSeverity,
     BugStatus,
+    Project,
     QualityEvent,
     QualityForecast,
+    Sprint,
     Story,
     StoryStatus,
 )
@@ -249,4 +252,232 @@ def get_engineering_health_index(db: Session, project_id: int) -> dict:
             "production_defects": production_bugs,
             "quality_events": total_events,
         },
+    }
+
+
+def get_quality_trend(
+    db: Session, project_id: int, periods: int = 6
+) -> dict:
+    """Compute quality trend over recent sprints/time periods (Phase 4).
+
+    Returns a time-series of quality metrics for trend visualization and forecasting.
+    """
+    sprints = (
+        db.query(Sprint)
+        .filter(Sprint.project_id == project_id)
+        .order_by(Sprint.created_at.desc())
+        .limit(periods)
+        .all()
+    )
+    sprints.reverse()  # chronological order
+
+    if not sprints:
+        # Fall back to time-based periods (last N months)
+        return _time_based_trend(db, project_id, periods)
+
+    trend_data = []
+    for sprint in sprints:
+        stories = db.query(Story).filter(
+            Story.project_id == project_id,
+            Story.sprint_id == sprint.id,
+        ).all()
+        story_ids = [s.id for s in stories]
+
+        total_bugs = (
+            db.query(Bug).filter(Bug.story_id.in_(story_ids)).count()
+            if story_ids else 0
+        )
+        done_stories = sum(
+            1 for s in stories
+            if s.status in [StoryStatus.DONE, StoryStatus.RELEASED]
+        )
+
+        positive_events = (
+            db.query(func.count(QualityEvent.id))
+            .filter(QualityEvent.story_id.in_(story_ids), QualityEvent.delta > 0)
+            .scalar()
+            if story_ids else 0
+        ) or 0
+        total_events = (
+            db.query(func.count(QualityEvent.id))
+            .filter(QualityEvent.story_id.in_(story_ids))
+            .scalar()
+            if story_ids else 0
+        ) or 0
+
+        bug_density = total_bugs / len(stories) if stories else 0
+        completion_rate = done_stories / len(stories) if stories else 0
+        positive_ratio = positive_events / total_events if total_events > 0 else 0.5
+
+        trend_data.append({
+            "period": sprint.name,
+            "sprint_id": sprint.id,
+            "stories": len(stories),
+            "bugs": total_bugs,
+            "bug_density": round(bug_density, 2),
+            "completion_rate": round(completion_rate * 100, 1),
+            "positive_event_ratio": round(positive_ratio * 100, 1),
+        })
+
+    # Compute trend direction
+    forecast_direction = _compute_trend_direction(trend_data)
+
+    return {
+        "project_id": project_id,
+        "periods": trend_data,
+        "forecast": forecast_direction,
+    }
+
+
+def _time_based_trend(db: Session, project_id: int, periods: int) -> dict:
+    """Fallback: compute trend using monthly time windows."""
+    trend_data = []
+    now = datetime.utcnow()
+
+    for i in range(periods - 1, -1, -1):
+        period_start = now - timedelta(days=30 * (i + 1))
+        period_end = now - timedelta(days=30 * i)
+        period_label = period_start.strftime("%Y-%m")
+
+        stories = (
+            db.query(Story)
+            .filter(
+                Story.project_id == project_id,
+                Story.created_at >= period_start,
+                Story.created_at < period_end,
+            )
+            .all()
+        )
+        story_ids = [s.id for s in stories]
+
+        total_bugs = (
+            db.query(Bug).filter(Bug.story_id.in_(story_ids)).count()
+            if story_ids else 0
+        )
+
+        bug_density = total_bugs / len(stories) if stories else 0
+        done_stories = sum(
+            1 for s in stories
+            if s.status in [StoryStatus.DONE, StoryStatus.RELEASED]
+        )
+        completion_rate = done_stories / len(stories) if stories else 0
+
+        trend_data.append({
+            "period": period_label,
+            "sprint_id": None,
+            "stories": len(stories),
+            "bugs": total_bugs,
+            "bug_density": round(bug_density, 2),
+            "completion_rate": round(completion_rate * 100, 1),
+            "positive_event_ratio": 50.0,  # default when no sprint data
+        })
+
+    forecast_direction = _compute_trend_direction(trend_data)
+
+    return {
+        "project_id": project_id,
+        "periods": trend_data,
+        "forecast": forecast_direction,
+    }
+
+
+def _compute_trend_direction(trend_data: list[dict]) -> dict:
+    """Compute trend direction and predicted next-period values."""
+    if len(trend_data) < 2:
+        return {
+            "direction": "stable",
+            "bug_density_trend": "stable",
+            "completion_trend": "stable",
+            "predicted_bug_density": trend_data[0]["bug_density"] if trend_data else 0,
+            "predicted_completion_rate": trend_data[0]["completion_rate"] if trend_data else 0,
+            "confidence": 0.2,
+        }
+
+    # Simple linear trend on bug density
+    densities = [p["bug_density"] for p in trend_data]
+    completions = [p["completion_rate"] for p in trend_data]
+
+    density_slope = _linear_slope(densities)
+    completion_slope = _linear_slope(completions)
+
+    # Predict next period
+    predicted_density = max(0, densities[-1] + density_slope)
+    predicted_completion = min(100, max(0, completions[-1] + completion_slope))
+
+    # Determine overall direction
+    if density_slope < -0.1 and completion_slope > 0.5:
+        direction = "improving"
+    elif density_slope > 0.1 and completion_slope < -0.5:
+        direction = "declining"
+    else:
+        direction = "stable"
+
+    # Confidence based on data points and consistency
+    confidence = min(0.3 + len(trend_data) * 0.1, 0.85)
+
+    return {
+        "direction": direction,
+        "bug_density_trend": "improving" if density_slope < -0.05 else ("declining" if density_slope > 0.05 else "stable"),
+        "completion_trend": "improving" if completion_slope > 0.5 else ("declining" if completion_slope < -0.5 else "stable"),
+        "predicted_bug_density": round(predicted_density, 2),
+        "predicted_completion_rate": round(predicted_completion, 1),
+        "confidence": round(confidence, 2),
+    }
+
+
+def _linear_slope(values: list[float]) -> float:
+    """Compute simple linear regression slope for a list of values."""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(values) / n
+    numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values))
+    denominator = sum((i - x_mean) ** 2 for i in range(n))
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
+
+
+def get_org_benchmarking(db: Session) -> dict:
+    """Org-level benchmarking: compare quality across all projects (Phase 4).
+
+    Returns per-project health scores for cross-project comparison.
+    """
+    projects = db.query(Project).all()
+    benchmarks = []
+
+    for project in projects:
+        health = get_engineering_health_index(db, project.id)
+        total_stories = health["totals"]["stories"]
+        total_bugs = health["totals"]["bugs"]
+        bug_density = total_bugs / total_stories if total_stories > 0 else 0
+
+        benchmarks.append({
+            "project_id": project.id,
+            "project_name": project.name,
+            "health_index": health["health_index"],
+            "zero_bug_rate": health["components"]["zero_bug_rate"],
+            "production_stability": health["components"]["production_stability"],
+            "bug_density": round(bug_density, 2),
+            "total_stories": total_stories,
+            "total_bugs": total_bugs,
+        })
+
+    # Compute org-wide averages
+    if benchmarks:
+        avg_health = round(sum(b["health_index"] for b in benchmarks) / len(benchmarks), 1)
+        avg_bug_density = round(sum(b["bug_density"] for b in benchmarks) / len(benchmarks), 2)
+    else:
+        avg_health = 0
+        avg_bug_density = 0
+
+    # Sort by health index descending
+    benchmarks.sort(key=lambda b: b["health_index"], reverse=True)
+
+    return {
+        "org_health_index": avg_health,
+        "org_bug_density": avg_bug_density,
+        "project_count": len(benchmarks),
+        "projects": benchmarks,
     }

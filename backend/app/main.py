@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import attachments, dashboard, intelligence, projects, quality, stories, users
+from app.routers import attachments, dashboard, intelligence, prediction, projects, quality, stories, users
 
 app = FastAPI(
     title="EQIP - Engineering Quality Intelligence Platform",
@@ -33,6 +33,7 @@ app.include_router(quality.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(attachments.router, prefix="/api")
 app.include_router(intelligence.router, prefix="/api")
+app.include_router(prediction.router, prefix="/api")
 
 
 @app.get("/")
