@@ -241,6 +241,7 @@ class Story(Base):
     project = relationship("Project", back_populates="stories")
     sprint = relationship("Sprint", back_populates="stories")
     bugs = relationship("Bug", back_populates="story")
+    attachments_rel = relationship("Attachment", back_populates="story")
 
 
 class Bug(Base):
@@ -322,3 +323,94 @@ class ScoringWeight(Base):
     severity = Column(Enum(BugSeverity), nullable=True)
     weight = Column(Float, nullable=False, default=1.0)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Attachment(Base):
+    """Reference documents attached to stories (Word/PDF/Excel)."""
+
+    __tablename__ = "attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    story_id = Column(Integer, ForeignKey("stories.id"), nullable=False)
+    filename = Column(String(500), nullable=False)
+    file_type = Column(String(50), nullable=False)  # pdf, docx, xlsx, csv
+    file_size = Column(Integer, nullable=False)  # bytes
+    file_path = Column(String(1000), nullable=False)  # storage path
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    story = relationship("Story", back_populates="attachments_rel")
+
+
+class Badge(Base):
+    """Badges awarded based on quality facts (FR-14)."""
+
+    __tablename__ = "badges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)  # e.g. "Zero-Bug Champion"
+    description = Column(Text, nullable=True)
+    criteria = Column(JSON, nullable=True)  # rules for earning this badge
+    icon = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserBadge(Base):
+    """Badge awards to users with supporting evidence (FR-14)."""
+
+    __tablename__ = "user_badges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    badge_id = Column(Integer, ForeignKey("badges.id"), nullable=False)
+    period = Column(String(50), nullable=False)  # e.g. "2026-07"
+    evidence = Column(JSON, nullable=True)  # facts behind the badge
+    awarded_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Dispute(Base):
+    """Dispute handling for AI-assigned root cause/owner (FR-16)."""
+
+    __tablename__ = "disputes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bug_id = Column(Integer, ForeignKey("bugs.id"), nullable=False)
+    raised_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(50), default="open")  # open, resolved, rejected
+    resolution = Column(Text, nullable=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class CoachingRecommendation(Base):
+    """AI-generated coaching recommendations (FR-15)."""
+
+    __tablename__ = "coaching_recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    module = Column(String(255), nullable=True)
+    category = Column(String(100), nullable=False)  # area of improvement
+    recommendation = Column(Text, nullable=False)
+    supporting_data = Column(JSON, nullable=True)  # facts behind the tip
+    is_dismissed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class QualityForecast(Base):
+    """Release-risk prediction and quality forecast (Phase 4)."""
+
+    __tablename__ = "quality_forecasts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=True)
+    release = Column(String(100), nullable=True)
+    risk_score = Column(Float, nullable=False)  # 0-100
+    confidence = Column(Float, nullable=False)  # 0-1
+    factors = Column(JSON, nullable=True)  # contributing risk factors
+    recommendations = Column(JSON, nullable=True)  # mitigation actions
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -280,3 +280,130 @@ class ImportResult(BaseModel):
     total_rows: int
     imported: int
     errors: list[dict]
+
+
+# --- Attachment ---
+
+
+class AttachmentResponse(BaseModel):
+    id: int
+    story_id: int
+    filename: str
+    file_type: str
+    file_size: int
+    description: Optional[str] = None
+    uploaded_by: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Badge ---
+
+
+class BadgeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    criteria: Optional[dict] = None
+    icon: Optional[str] = None
+
+
+class BadgeResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    criteria: Optional[dict] = None
+    icon: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UserBadgeResponse(BaseModel):
+    id: int
+    user_id: int
+    badge_id: int
+    period: str
+    evidence: Optional[list] = None
+    awarded_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Dispute (FR-16) ---
+
+
+class DisputeCreate(BaseModel):
+    bug_id: int
+    raised_by: int
+    reason: str
+
+
+class DisputeResolve(BaseModel):
+    resolution: str
+    resolved_by: int
+    status: str = "resolved"  # resolved or rejected
+
+
+class DisputeResponse(BaseModel):
+    id: int
+    bug_id: int
+    raised_by: int
+    reason: str
+    status: str
+    resolution: Optional[str] = None
+    resolved_by: Optional[int] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# --- Coaching (FR-15) ---
+
+
+class CoachingRecommendationResponse(BaseModel):
+    id: int
+    user_id: int
+    module: Optional[str] = None
+    category: str
+    recommendation: str
+    supporting_data: Optional[dict] = None
+    is_dismissed: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Forecast (Phase 4) ---
+
+
+class QualityForecastResponse(BaseModel):
+    id: int
+    project_id: int
+    sprint_id: Optional[int] = None
+    release: Optional[str] = None
+    risk_score: float
+    confidence: float
+    factors: Optional[list] = None
+    recommendations: Optional[list] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Search ---
+
+
+class SearchResult(BaseModel):
+    entity_type: str  # story, bug, event
+    entity_id: int
+    title: str
+    snippet: str
+    relevance_score: float
