@@ -72,20 +72,15 @@ async def upload_attachment(
     if not safe_basename:
         safe_basename = "attachment" + ext
 
-    # Generate unique storage path using only UUID (no user-controlled path components)
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    story_dir = UPLOAD_DIR / str(story_id)
-    story_dir.mkdir(parents=True, exist_ok=True)
-    file_path = story_dir / unique_name
+    # Generate a fully random storage path (no user-controlled components)
+    file_uuid = uuid.uuid4().hex
+    # Use flat storage with UUID-only filenames to avoid path injection
+    storage_filename = f"{file_uuid}{ext}"
+    file_path = UPLOAD_DIR / storage_filename
 
-    # Verify the resolved path is within UPLOAD_DIR to prevent path traversal
-    resolved_path = file_path.resolve()
-    if not str(resolved_path).startswith(str(UPLOAD_DIR.resolve())):
-        raise HTTPException(status_code=400, detail="Invalid file path")
-
-    # Save file
-    with open(resolved_path, "wb") as f:
-        f.write(content)
+    # Save file to disk
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(content)
 
     # Create database record
     attachment = Attachment(
@@ -93,7 +88,7 @@ async def upload_attachment(
         filename=safe_basename,
         file_type=ALLOWED_EXTENSIONS[ext],
         file_size=file_size,
-        file_path=str(resolved_path),
+        file_path=storage_filename,  # Store only the UUID filename, not full path
         uploaded_by=uploaded_by,
         description=description,
     )
@@ -119,10 +114,10 @@ def download_attachment(attachment_id: int, db: Session = Depends(get_db)):
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    # Validate file path is within upload directory
-    resolved_path = Path(attachment.file_path).resolve()
-    if not str(resolved_path).startswith(str(UPLOAD_DIR.resolve())):
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Construct path from stored UUID filename (never user-controlled)
+    # file_path stores only a UUID-based filename like "abc123.pdf"
+    stored_name = os.path.basename(attachment.file_path)
+    resolved_path = UPLOAD_DIR / stored_name
 
     if not resolved_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
@@ -141,9 +136,11 @@ def delete_attachment(attachment_id: int, db: Session = Depends(get_db)):
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    # Remove file from disk
-    if os.path.exists(attachment.file_path):
-        os.remove(attachment.file_path)
+    # Remove file from disk using stored UUID filename
+    stored_name = os.path.basename(attachment.file_path)
+    file_on_disk = UPLOAD_DIR / stored_name
+    if file_on_disk.exists():
+        file_on_disk.unlink()
 
     db.delete(attachment)
     db.commit()
