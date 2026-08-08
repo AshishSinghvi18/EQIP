@@ -4,6 +4,7 @@ import Stories from "./pages/Stories";
 import Bugs from "./pages/Bugs";
 import Scores from "./pages/Scores";
 import StoryOnboarding from "./pages/StoryOnboarding";
+import StoryQuality from "./pages/StoryQuality";
 import Leaderboard from "./pages/Leaderboard";
 import Search from "./pages/Search";
 import Coaching from "./pages/Coaching";
@@ -34,6 +35,12 @@ function App() {
             style={{ color: "#e0e0e0", textDecoration: "none" }}
           >
             📥 Onboarding
+          </Link>
+          <Link
+            to="/story-quality"
+            style={{ color: "#e0e0e0", textDecoration: "none" }}
+          >
+            📋 Story Quality
           </Link>
           <Link
             to="/stories"
@@ -85,6 +92,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/onboarding" element={<StoryOnboarding />} />
+            <Route path="/story-quality" element={<StoryQuality />} />
             <Route path="/stories" element={<Stories />} />
             <Route path="/bugs" element={<Bugs />} />
             <Route path="/scores" element={<Scores />} />

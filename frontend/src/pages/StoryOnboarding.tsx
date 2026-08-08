@@ -11,6 +11,12 @@ interface Story {
   story_points: number | null;
   acceptance_criteria: string | null;
   epic: string | null;
+  onboarding_complete?: boolean;
+  completeness_gaps?: string[] | null;
+  quality_class?: string | null;
+  description?: string | null;
+  unit_test_cases?: string[] | null;
+  ba_test_cases?: string[] | null;
 }
 
 interface Attachment {
@@ -205,6 +211,11 @@ export default function StoryOnboarding() {
                 >
                   {story.module || "No module"} · {story.status} ·{" "}
                   {story.story_points ?? "—"} pts
+                  {story.onboarding_complete ? (
+                    <span style={{ color: "#16a34a", marginLeft: "0.5rem" }}>✓ Onboarded</span>
+                  ) : (
+                    <span style={{ color: "#dc2626", marginLeft: "0.5rem" }}>⚠ Needs data</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -259,6 +270,33 @@ export default function StoryOnboarding() {
                     </p>
                   </div>
                 )}
+                {/* v1.1 Onboarding Data Gate Status */}
+                <div style={{ marginTop: "1rem", padding: "0.75rem", background: selectedStory.onboarding_complete ? "#f0fdf4" : "#fef2f2", borderRadius: "6px", border: `1px solid ${selectedStory.onboarding_complete ? "#bbf7d0" : "#fecaca"}` }}>
+                  <strong style={{ fontSize: "0.85rem" }}>
+                    Onboarding Status: {selectedStory.onboarding_complete ? "✅ Complete" : "⚠️ Insufficient Data"}
+                  </strong>
+                  {selectedStory.completeness_gaps && selectedStory.completeness_gaps.length > 0 && (
+                    <ul style={{ margin: "0.5rem 0 0", padding: "0 0 0 1.25rem", fontSize: "0.8rem", color: "#dc2626" }}>
+                      {selectedStory.completeness_gaps.map((gap, i) => (
+                        <li key={i}>{gap.replace(/_/g, " ")}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.post(`/story-quality/story/${selectedStory.id}/check-onboarding`);
+                        const r = await api.get("/stories");
+                        setStories(r.data);
+                        const updated = r.data.find((s: Story) => s.id === selectedStory.id);
+                        if (updated) setSelectedStory(updated);
+                      } catch { /* ignore */ }
+                    }}
+                    style={{ marginTop: "0.5rem", padding: "0.3rem 0.75rem", fontSize: "0.8rem", background: "#3b82f6", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                  >
+                    🔄 Re-check Onboarding
+                  </button>
+                </div>
               </div>
 
               {/* Reference Documents */}
