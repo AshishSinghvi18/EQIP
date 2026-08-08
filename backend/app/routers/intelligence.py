@@ -30,7 +30,7 @@ from app.schemas import (
     SearchResult,
     UserBadgeResponse,
 )
-from app.services.ai_service import generate_coaching_recommendations, suggest_root_cause
+from app.services.ai_service import generate_coaching_recommendations, suggest_bug_reasoning_class, suggest_root_cause
 from app.services.embedding_service import (
     backfill_embeddings,
     embed_bug,
@@ -112,7 +112,78 @@ def approve_ai_suggestion(
     }
 
 
-# --- Semantic Search (Phase 2, FR-10) ---
+# --- Bug-Reasoning Classification (v1.1, §7.4, FR-21) ---
+
+
+@router.post("/bugs/{bug_id}/suggest-reasoning")
+def suggest_reasoning_class(bug_id: int, db: Session = Depends(get_db)):
+    """AI suggests a bug-reasoning class for a bug (§7.4, FR-21).
+
+    Classes: silly_miss, critical_miss, info_not_in_story, missing_unit_test, wrong_test_cases.
+    Requires EM sign-off before affecting scores.
+    """
+    bug = db.query(Bug).filter(Bug.id == bug_id).first()
+    if not bug:
+        raise HTTPException(status_code=404, detail="Bug not found")
+
+    story = None
+    if bug.story_id:
+        story = db.query(Story).filter(Story.id == bug.story_id).first()
+
+    suggestion = suggest_bug_reasoning_class(bug, story)
+
+    # Store on the bug as a suggestion (not yet approved)
+    from app.models.models import BugReasoningClass
+    class_map = {c.value: c for c in BugReasoningClass}
+    reasoning_class = class_map.get(suggestion["reasoning_class"])
+    bug.reasoning_class = reasoning_class
+    bug.reasoning_class_approved = False
+
+    # Also store in ai_suggested for audit
+    existing_ai = bug.ai_suggested or {}
+    existing_ai["reasoning_class_suggestion"] = suggestion
+    bug.ai_suggested = existing_ai
+    db.commit()
+    db.refresh(bug)
+
+    return {
+        "bug_id": bug_id,
+        "suggestion": suggestion,
+        "note": "Reasoning class stored but NOT approved. EM must approve before it affects scores.",
+    }
+
+
+@router.post("/bugs/{bug_id}/approve-reasoning")
+def approve_reasoning_class(
+    bug_id: int,
+    approved_by: int = Query(..., description="EM user ID"),
+    db: Session = Depends(get_db),
+):
+    """EM approves the AI-suggested reasoning class for a bug (§7.4, FR-9, FR-21).
+
+    Once approved, this reasoning class will affect the responsible role's
+    per-story score and cumulative scorecard.
+    """
+    bug = db.query(Bug).filter(Bug.id == bug_id).first()
+    if not bug:
+        raise HTTPException(status_code=404, detail="Bug not found")
+    if not bug.reasoning_class:
+        raise HTTPException(status_code=400, detail="No reasoning class to approve")
+    if bug.reasoning_class_approved:
+        raise HTTPException(status_code=400, detail="Reasoning class already approved")
+
+    bug.reasoning_class_approved = True
+    bug.human_approved_by = approved_by
+    bug.human_approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(bug)
+
+    return {
+        "bug_id": bug_id,
+        "reasoning_class": bug.reasoning_class.value,
+        "status": "approved",
+        "approved_by": approved_by,
+    }
 
 
 @router.get("/search", response_model=list[SearchResult])
