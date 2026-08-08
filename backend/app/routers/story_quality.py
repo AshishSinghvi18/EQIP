@@ -72,12 +72,6 @@ def get_class_breakdown(
     db: Session = Depends(get_db),
 ):
     """Quality-class breakdown: High/Medium/Low as counts and percentages (§10.5)."""
-    query = db.query(Story).filter(Story.onboarding_complete.is_(True))
-    if project_id:
-        query = query.filter(Story.project_id == project_id)
-    if sprint_id:
-        query = query.filter(Story.sprint_id == sprint_id)
-
     results = (
         db.query(Story.quality_class, func.count(Story.id))
         .filter(Story.onboarding_complete.is_(True))

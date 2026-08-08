@@ -333,7 +333,7 @@ export default function StoryQuality() {
                 }}
               >
                 <div style={{ fontWeight: 600, marginBottom: "0.5rem", textTransform: "capitalize" }}>
-                  {rs.role.replace("_", " ")}
+                  {rs.role.replaceAll("_", " ")}
                 </div>
                 <div style={{ fontSize: "2rem", fontWeight: 700, color: rs.score >= 8 ? "#2ecc71" : rs.score >= 5 ? "#f39c12" : "#e74c3c" }}>
                   {rs.score.toFixed(1)}

@@ -290,7 +290,9 @@ export default function StoryOnboarding() {
                         setStories(r.data);
                         const updated = r.data.find((s: Story) => s.id === selectedStory.id);
                         if (updated) setSelectedStory(updated);
-                      } catch { /* ignore */ }
+                      } catch {
+                        alert("Failed to check onboarding status. Please try again.");
+                      }
                     }}
                     style={{ marginTop: "0.5rem", padding: "0.3rem 0.75rem", fontSize: "0.8rem", background: "#3b82f6", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
                   >
