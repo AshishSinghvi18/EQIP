@@ -2,6 +2,8 @@
 
 > Measures engineering quality across the full delivery chain. Traces defects to their true origin, scores each role on its own absolute facts, and provides interactive drill-down dashboards.
 
+**Design Spec Version:** 1.1 — see [`EQIP-Design-Spec.md`](EQIP-Design-Spec.md) for the full specification.
+
 ---
 
 ## Key Design Principles
@@ -9,6 +11,7 @@
 | Principle | Description |
 |-----------|-------------|
 | **No shared point pool** | Each role is scored on its own absolute facts independently — no zero-sum competition |
+| **Per-role story score** | Every participant gets their own 10 points per story — deductions apply only to the responsible role *(v1.1)* |
 | **Full-chain root cause** | Trace defects through Requirement → Dev → Code Review → Test → Automation → UAT → Release → Production |
 | **AI suggests, humans decide** | Mandatory EM sign-off before any AI suggestion affects scores |
 | **Immutable audit trail** | Every score change is append-only and replayable |
@@ -21,7 +24,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Frontend (React 18 + TypeScript + Vite)                     │
+│  Frontend (React 19 + TypeScript 6 + Vite 8)                 │
 │  ─ Dashboard, drill-down charts, coaching, forecast views    │
 │  ─ Recharts for data visualization                           │
 ├──────────────────────────────────────────────────────────────┤
@@ -143,6 +146,19 @@ Forecasting and organizational health intelligence.
 | **Engineering Health Index** | — | Single 0-100 composite score: zero-bug rate (40%) + positive event ratio (30%) + production stability (30%) |
 | **Org Benchmarking** | — | Cross-project quality comparison with ranked health scores and org-wide averages |
 
+### Phase 5 — Built-in Sprint Planning 📋 *(Planned — Design Spec v1.1)*
+
+Native story creation and sprint planning inside EQIP, eliminating the need for separate import/onboarding.
+
+| Feature | FR | Description |
+|---------|-----|-------------|
+| **Native Story Creation** | — | Create and plan stories directly inside EQIP instead of importing |
+| **Per-Role Story Scoring** | FR-19 | Each participant gets their own 10-point score per story; deductions only for own faults |
+| **Story Classification** | FR-20 | Automatic High / Medium / Low classification based on escalations and serious bugs |
+| **Bug-Reasoning Classes** | FR-21 | AI classifies bugs into 5 reasoning classes (silly miss, critical miss, info-not-in-story, missing unit test, wrong test cases) |
+| **Onboarding Data Gate** | FR-22 | Stories scored only when all required data points are present |
+| **Story-Quality Dashboard** | §10.5 | Total onboarded count, class breakdown, "where we fall" bug-reasoning view |
+
 ---
 
 ## Frontend Pages
@@ -158,6 +174,7 @@ Forecasting and organizational health intelligence.
 | **Coaching** | Personalized recommendations, health index display, forecast summaries |
 | **Trends** | Quality trend charts, module risk heatmap, category/severity trend lines |
 | **Forecast** | Release-risk gauge, risk factor waterfall, trend predictions |
+| **Story Quality** *(planned)* | Total onboarded stories, High/Medium/Low class breakdown, bug-reasoning distribution |
 
 ---
 
@@ -246,6 +263,38 @@ Forecasting and organizational health intelligence.
 
 Each role has independent fact-based scoring. No shared pool — two people on the same story can both score well.
 
+### Per-Role Story Score *(Design Spec v1.1)*
+
+Every participating role (BA, Developer, Tester, Automation) starts each story at **10.0** and loses points **only for their own attributed faults**. Deductions are driven by bug-reasoning classes (see below) and require EM sign-off before taking effect. A role's story score floors at 0.0 (never negative). All scores are derived by replaying events — never overwritten.
+
+### Story Classification: High / Medium / Low *(Design Spec v1.1)*
+
+Each story is classified based on escalations and serious bugs (Critical, Production, Security, Data loss):
+
+| Class | Gate |
+|-------|------|
+| **High** | ≥ 1 escalation OR ≥ 1 serious-severity bug |
+| **Medium** | No escalation, no serious bug, but average role score < configurable threshold |
+| **Low** | Everything else (healthy) |
+
+### Onboarding Data Gate *(Design Spec v1.1)*
+
+A story is only scored once it has: description, bug list, dev unit tests, and BA/tester test cases. Stories missing required data are flagged as "insufficient data."
+
+### Bug-Reasoning Classes *(Design Spec v1.1)*
+
+AI classifies each bug into one of five reasoning classes (EM sign-off required):
+
+| Class | Meaning | Primary Role |
+|-------|---------|--------------|
+| **Silly miss** | Obvious defect that should have been caught | Developer |
+| **Critical miss** | Complex defect in critical path | Developer / Tester |
+| **Info not in story** | Bug stems from missing/ambiguous requirements | BA |
+| **Missing unit test** | Existing unit tests didn't cover the scenario | Developer |
+| **Wrong test cases** | Test cases were generated but missed the scenario | Tester / Automation |
+
+### Role Scoring Summary
+
 | Role | Gains (positive events) | Losses (negative events) |
 |------|------------------------|--------------------------|
 | **Developer** | First-time-right code review, zero-defect story, reusable component, performance/security improvement, early completion | Validation bug, logic bug, high-severity defect, production defect, rework cycle, failed code review |
@@ -286,7 +335,7 @@ Total: 74 tests — all passing ✅
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, TypeScript, Vite, Recharts |
+| Frontend | React 19, TypeScript 6, Vite 8, Recharts |
 | Backend | FastAPI, SQLAlchemy, Pydantic v2 |
 | Database | PostgreSQL 16, pgvector |
 | AI/ML | OpenAI-compatible API (Qwen3/DeepSeek V4), BGE-M3 embeddings |
