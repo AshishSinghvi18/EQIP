@@ -75,7 +75,7 @@ docker-compose up
 ```bash
 cd backend
 pytest tests/ -v
-# 74 tests covering all 4 phases
+# 124 tests covering all 4 phases + sample stories/bugs
 ```
 
 ---
@@ -272,13 +272,174 @@ Each role has independent fact-based scoring. No shared pool — two people on t
 ## Test Coverage
 
 ```
-tests/test_core.py    — Phase 1: Scoring engine, event recording, weight system
-tests/test_phase2.py  — Phase 2: AI suggestions, semantic search, embeddings, chain RCA
-tests/test_phase3.py  — Phase 3: Module risk, trend analytics, auto-badge evaluation
-tests/test_phase4.py  — Phase 4: Forecast, health index, org benchmarking, trend prediction
+tests/test_core.py                  — Phase 1: Scoring engine, event recording, weight system
+tests/test_phase2.py                — Phase 2: AI suggestions, semantic search, embeddings, chain RCA
+tests/test_phase3.py                — Phase 3: Module risk, trend analytics, auto-badge evaluation
+tests/test_phase4.py                — Phase 4: Forecast, health index, org benchmarking, trend prediction
+tests/test_sample_stories_bugs.py   — Sample data: user stories, bugs, scoring, import, RCA keyword engine
 
-Total: 74 tests — all passing ✅
+Total: 124 tests — all passing ✅
 ```
+
+---
+
+## Sample User Stories
+
+The project includes 10 realistic user stories modelling an e-commerce platform sprint. Full data lives in `backend/tests/sample_data.py`.
+
+| ID | Title | Module | Points | Priority | Status |
+|----|-------|--------|--------|----------|--------|
+| US-101 | User Login with Email and Password | Auth | 5 | High | done |
+| US-102 | Product Search with Filters | Search | 8 | High | done |
+| US-103 | Add to Cart and Update Quantity | Cart | 5 | High | done |
+| US-104 | Checkout with Stripe Payment | Checkout | 13 | Critical | in_progress |
+| US-105 | Order History and Tracking | Orders | 5 | Medium | in_testing |
+| US-106 | User Profile Management | Profile | 3 | Medium | done |
+| US-107 | Admin Dashboard — Sales Analytics | Analytics | 8 | Low | backlog |
+| US-108 | Push Notification Preferences | Notifications | 3 | Low | done |
+| US-109 | Wishlist Functionality | Wishlist | 3 | Medium | done |
+| US-110 | Password Reset via Email | Auth | 5 | High | done |
+
+---
+
+## Sample Bugs
+
+12 sample bugs linked to the stories above, covering security, validation, performance, requirement gaps, and business logic issues.
+
+| ID | Story | Summary | Severity | Root Cause | Origin | Status |
+|----|-------|---------|----------|------------|--------|--------|
+| BUG-201 | US-101 | Login allows SQL injection in email field | Critical | Security | Development | Fixed |
+| BUG-202 | US-101 | Account lockout counter resets on page refresh | High | Validation | Development | Fixed |
+| BUG-203 | US-102 | Price filter returns products outside selected range | Medium | Validation | Development | Open |
+| BUG-204 | US-102 | Search returns 500 error for special characters | High | Validation | Development | Fixed |
+| BUG-205 | US-103 | Cart allows adding more items than available stock | High | Validation | Requirement | Open |
+| BUG-206 | US-103 | Cart total shows wrong amount with discount code | Critical | Business Logic | Requirement | Open |
+| BUG-207 | US-104 | Double charge when user clicks Pay button twice | Critical | Validation | Development | Open |
+| BUG-208 | US-104 | Order confirmation email not sent for guest checkout | Medium | Requirement Gap | Requirement | Open |
+| BUG-209 | US-105 | Order history page crashes for users with 1000+ orders | High | Performance | Development | Open |
+| BUG-210 | US-106 | Profile photo upload accepts files larger than 5 MB | Medium | Validation | Development | Fixed |
+| BUG-211 | US-110 | Password reset link can be reused multiple times | High | Security | Development | Fixed |
+| BUG-212 | US-109 | Wishlist does not enforce 50-item limit | Medium | AC Missing | Development | Open |
+
+---
+
+## Test Cases & Results
+
+50 test cases validate the sample data and its integration with the EQIP scoring engine, import pipeline, and RCA keyword engine.
+
+### Test Execution Results
+
+```
+$ cd backend && pytest tests/test_sample_stories_bugs.py -v
+
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc001_all_stories_have_required_fields       PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc002_story_ids_are_unique                   PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc003_story_statuses_are_valid               PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc004_story_points_are_fibonacci             PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc005_acceptance_criteria_non_empty           PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc006_high_priority_stories_have_medium_or_higher_complexity PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc007_each_module_has_at_least_one_story      PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc008_done_stories_exist                      PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc009_story_id_format_correct                 PASSED
+tests/test_sample_stories_bugs.py::TestUserStoryDataIntegrity::test_tc010_sample_stories_count                    PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc011_all_bugs_have_required_fields                 PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc012_bug_ids_are_unique                            PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc013_severities_map_to_enum                        PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc014_statuses_map_to_enum                          PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc015_root_cause_categories_valid                   PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc016_origin_stages_valid                           PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc017_critical_bugs_have_p0_priority                PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc018_every_bug_linked_to_story                     PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc019_bug_id_format_correct                         PASSED
+tests/test_sample_stories_bugs.py::TestBugDataIntegrity::test_tc020_sample_bugs_count                             PASSED
+tests/test_sample_stories_bugs.py::TestBugDistribution::test_tc021_multiple_severity_levels_covered               PASSED
+tests/test_sample_stories_bugs.py::TestBugDistribution::test_tc022_multiple_root_cause_categories_covered         PASSED
+tests/test_sample_stories_bugs.py::TestBugDistribution::test_tc023_bugs_detected_at_multiple_stages               PASSED
+tests/test_sample_stories_bugs.py::TestBugDistribution::test_tc024_bugs_originate_from_multiple_stages            PASSED
+tests/test_sample_stories_bugs.py::TestBugDistribution::test_tc025_at_least_one_security_bug                      PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc026_developer_gains_for_zero_defect_story    PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc027_developer_penalised_for_validation_bug   PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc028_tester_gains_for_critical_issue_found    PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc029_ba_penalised_for_requirement_gap         PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc030_tester_penalised_for_escaped_production_defect PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc031_ai_suggested_event_requires_approval     PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc032_independent_scoring_dev_and_tester_same_story PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc033_unapproved_ai_event_excluded_from_total  PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc034_security_improvement_positive_delta      PASSED
+tests/test_sample_stories_bugs.py::TestScoringWithSampleData::test_tc035_automation_penalised_for_flaky_tests     PASSED
+tests/test_sample_stories_bugs.py::TestImportPipeline::test_tc036_story_column_normalisation                      PASSED
+tests/test_sample_stories_bugs.py::TestImportPipeline::test_tc037_bug_column_normalisation                        PASSED
+tests/test_sample_stories_bugs.py::TestImportPipeline::test_tc038_story_data_can_build_dataframe                  PASSED
+tests/test_sample_stories_bugs.py::TestImportPipeline::test_tc039_bug_data_can_build_dataframe                    PASSED
+tests/test_sample_stories_bugs.py::TestImportPipeline::test_tc040_bug_severity_distribution                       PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc041_security_bugs_map_to_security_category   PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc042_production_detected_bugs_are_high_severity PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc043_stories_with_bugs_exist                  PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc044_stories_without_bugs_exist               PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc045_requirement_origin_bugs_trace_to_ba      PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc046_development_origin_bugs_trace_to_developer PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc047_open_vs_fixed_bug_ratio                  PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc048_keyword_rule_engine_detects_validation   PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc049_keyword_rule_engine_detects_security     PASSED
+tests/test_sample_stories_bugs.py::TestCrossCuttingScenarios::test_tc050_keyword_rule_engine_detects_performance  PASSED
+
+50 passed ✅
+```
+
+### Test Case Summary
+
+| # | Test ID | Area | Description | Result |
+|---|---------|------|-------------|--------|
+| 1 | TC-001 | Story Data | All stories have required fields | ✅ Pass |
+| 2 | TC-002 | Story Data | Story IDs are unique | ✅ Pass |
+| 3 | TC-003 | Story Data | Statuses map to valid enum | ✅ Pass |
+| 4 | TC-004 | Story Data | Story points follow Fibonacci | ✅ Pass |
+| 5 | TC-005 | Story Data | Acceptance criteria non-empty | ✅ Pass |
+| 6 | TC-006 | Story Data | High-priority stories have ≥ Medium complexity | ✅ Pass |
+| 7 | TC-007 | Story Data | Multiple modules covered (≥5) | ✅ Pass |
+| 8 | TC-008 | Story Data | Done stories exist for scoring | ✅ Pass |
+| 9 | TC-009 | Story Data | Story ID format `US-NNN` | ✅ Pass |
+| 10 | TC-010 | Story Data | ≥10 sample stories | ✅ Pass |
+| 11 | TC-011 | Bug Data | All bugs have required fields | ✅ Pass |
+| 12 | TC-012 | Bug Data | Bug IDs are unique | ✅ Pass |
+| 13 | TC-013 | Bug Data | Severities map to enum | ✅ Pass |
+| 14 | TC-014 | Bug Data | Statuses map to enum | ✅ Pass |
+| 15 | TC-015 | Bug Data | Root cause categories valid | ✅ Pass |
+| 16 | TC-016 | Bug Data | Origin stages valid | ✅ Pass |
+| 17 | TC-017 | Bug Data | Critical bugs have P0 priority | ✅ Pass |
+| 18 | TC-018 | Bug Data | Every bug linked to a story | ✅ Pass |
+| 19 | TC-019 | Bug Data | Bug ID format `BUG-NNN` | ✅ Pass |
+| 20 | TC-020 | Bug Data | ≥10 sample bugs | ✅ Pass |
+| 21 | TC-021 | Distribution | ≥3 severity levels covered | ✅ Pass |
+| 22 | TC-022 | Distribution | ≥4 root cause categories | ✅ Pass |
+| 23 | TC-023 | Distribution | ≥3 detected stages | ✅ Pass |
+| 24 | TC-024 | Distribution | ≥2 origin stages | ✅ Pass |
+| 25 | TC-025 | Distribution | ≥1 security bug | ✅ Pass |
+| 26 | TC-026 | Scoring | Developer gains for zero-defect story | ✅ Pass |
+| 27 | TC-027 | Scoring | Developer penalised for validation bug | ✅ Pass |
+| 28 | TC-028 | Scoring | Tester gains for critical issue found | ✅ Pass |
+| 29 | TC-029 | Scoring | BA penalised for requirement gap | ✅ Pass |
+| 30 | TC-030 | Scoring | Tester penalised for escaped defect | ✅ Pass |
+| 31 | TC-031 | Scoring | AI-suggested event requires approval | ✅ Pass |
+| 32 | TC-032 | Scoring | Independent scoring — no zero-sum | ✅ Pass |
+| 33 | TC-033 | Scoring | Unapproved AI events excluded | ✅ Pass |
+| 34 | TC-034 | Scoring | Security improvement positive delta | ✅ Pass |
+| 35 | TC-035 | Scoring | Automation penalised for flaky tests | ✅ Pass |
+| 36 | TC-036 | Import | Story column normalisation | ✅ Pass |
+| 37 | TC-037 | Import | Bug column normalisation | ✅ Pass |
+| 38 | TC-038 | Import | Stories load into DataFrame | ✅ Pass |
+| 39 | TC-039 | Import | Bugs load into DataFrame | ✅ Pass |
+| 40 | TC-040 | Import | Bug severity distribution | ✅ Pass |
+| 41 | TC-041 | Cross-cutting | Security bugs are critical/high | ✅ Pass |
+| 42 | TC-042 | Cross-cutting | Production bugs are high severity | ✅ Pass |
+| 43 | TC-043 | Cross-cutting | Stories with bugs exist | ✅ Pass |
+| 44 | TC-044 | Cross-cutting | Stories without bugs exist | ✅ Pass |
+| 45 | TC-045 | Cross-cutting | Requirement-origin bugs trace to BA | ✅ Pass |
+| 46 | TC-046 | Cross-cutting | Development-origin bugs trace to Dev | ✅ Pass |
+| 47 | TC-047 | Cross-cutting | Open and fixed bugs both present | ✅ Pass |
+| 48 | TC-048 | RCA Engine | Keyword engine detects validation | ✅ Pass |
+| 49 | TC-049 | RCA Engine | Keyword engine detects security | ✅ Pass |
+| 50 | TC-050 | RCA Engine | Keyword engine detects performance | ✅ Pass |
 
 ---
 
