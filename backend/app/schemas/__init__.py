@@ -6,11 +6,13 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr
 
 from app.models.models import (
+    BugReasoningClass,
     BugSeverity,
     BugStatus,
     DetectedStage,
     EventType,
     OriginStage,
+    QualityClass,
     RootCauseCategory,
     StoryStatus,
     UserRole,
@@ -120,6 +122,12 @@ class StoryCreate(BaseModel):
     estimated_date: Optional[datetime] = None
     release: Optional[str] = None
     environment: Optional[str] = None
+    # v1.1 onboarding data fields (§4.8)
+    description: Optional[str] = None
+    screenshots: Optional[list] = None
+    unit_test_cases: Optional[list] = None
+    ba_test_cases: Optional[list] = None
+    escalations: Optional[list] = None
 
 
 class StoryResponse(BaseModel):
@@ -144,6 +152,16 @@ class StoryResponse(BaseModel):
     completion_date: Optional[datetime] = None
     release: Optional[str] = None
     environment: Optional[str] = None
+    # v1.1 fields
+    description: Optional[str] = None
+    screenshots: Optional[list] = None
+    unit_test_cases: Optional[list] = None
+    ba_test_cases: Optional[list] = None
+    escalations: Optional[list] = None
+    onboarding_complete: bool = False
+    completeness_gaps: Optional[list] = None
+    story_rollup: Optional[float] = None
+    quality_class: Optional[QualityClass] = None
     created_at: datetime
 
     class Config:
@@ -169,6 +187,7 @@ class BugCreate(BaseModel):
     origin_stage: Optional[OriginStage] = None
     ownership_split: Optional[dict] = None
     bug_category: Optional[str] = None
+    reasoning_class: Optional[BugReasoningClass] = None
 
 
 class BugResponse(BaseModel):
@@ -196,6 +215,8 @@ class BugResponse(BaseModel):
     ai_confidence: Optional[float] = None
     human_approved_by: Optional[int] = None
     human_approved_at: Optional[datetime] = None
+    reasoning_class: Optional[BugReasoningClass] = None
+    reasoning_class_approved: bool = False
 
     class Config:
         from_attributes = True
@@ -450,15 +471,71 @@ class HealthIndexResponse(BaseModel):
     totals: dict
 
 
-# --- Search ---
-
-
 class SearchResult(BaseModel):
     entity_type: str  # story, bug, event
     entity_id: int
     title: str
     snippet: str
     relevance_score: float
+
+
+# --- Per-Role Story Score (v1.1, §4.6, §8.6) ---
+
+
+class PerRoleStoryScoreResponse(BaseModel):
+    id: int
+    story_id: int
+    role: UserRole
+    actor_id: int
+    score: float
+    breakdown: Optional[list] = None
+    computed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Story Classification (v1.1, §4.7, §8.6b) ---
+
+
+class StoryClassResponse(BaseModel):
+    id: int
+    story_id: int
+    quality_class: QualityClass
+    rollup: Optional[float] = None
+    serious_bug_count: int
+    escalation_count: int
+    computed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Story Quality Dashboard (v1.1, §10.5) ---
+
+
+class StoryQualitySummary(BaseModel):
+    total_onboarded: int
+    insufficient_data: int
+    high_count: int
+    medium_count: int
+    low_count: int
+
+
+class BugReasoningBreakdown(BaseModel):
+    reasoning_class: str
+    count: int
+    percentage: float
+
+
+class StoryRoleScoreDetail(BaseModel):
+    role: str
+    actor_id: int
+    score: float
+    deductions: Optional[list] = None
+
+
+# --- Search ---
 
 
 # --- Embedding (Phase 2) ---

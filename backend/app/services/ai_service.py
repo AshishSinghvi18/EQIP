@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.models import (
     Bug,
+    BugReasoningClass,
     CoachingRecommendation,
     QualityEvent,
     RootCauseCategory,
@@ -440,3 +441,166 @@ def _create_recommendation(
         db.add(rec)
         return rec
     return None
+
+
+# --- Bug-Reasoning Classification (v1.1, §7.4) ---
+
+# Keyword patterns for reasoning class inference
+REASONING_CLASS_KEYWORDS = {
+    BugReasoningClass.SILLY_MISS: [
+        "typo", "obvious", "careless", "oversight", "simple mistake",
+        "forgot", "missed obvious", "trivial", "copy paste", "null check",
+    ],
+    BugReasoningClass.CRITICAL_MISS: [
+        "security", "data loss", "critical", "core logic", "fundamental",
+        "architecture", "design flaw", "race condition", "injection",
+        "authentication", "authorization", "encryption",
+    ],
+    BugReasoningClass.INFO_NOT_IN_STORY: [
+        "not specified", "unclear", "missing requirement", "ambiguous",
+        "not mentioned", "not documented", "no acceptance criteria",
+        "not in story", "missing info", "undocumented",
+    ],
+    BugReasoningClass.MISSING_UNIT_TEST: [
+        "no unit test", "missing test", "untested", "no coverage",
+        "test missing", "not tested", "unit test", "test coverage",
+    ],
+    BugReasoningClass.WRONG_TEST_CASES: [
+        "wrong test", "incorrect test", "bad test case", "test case wrong",
+        "missed scenario", "incomplete test", "test gap", "missing scenario",
+    ],
+}
+
+
+def suggest_bug_reasoning_class(bug: Bug, story: Optional[Story] = None) -> dict:
+    """Suggest a bug-reasoning class for a bug (§7.4, FR-21).
+
+    Returns a dict with the suggested reasoning class, confidence, and explanation.
+    Tries LLM first, falls back to keyword analysis.
+    """
+    llm_result = _llm_suggest_reasoning_class(bug, story)
+    if llm_result:
+        return llm_result
+    return _keyword_suggest_reasoning_class(bug)
+
+
+def _llm_suggest_reasoning_class(bug: Bug, story: Optional[Story] = None) -> Optional[dict]:
+    """Use LLM to suggest reasoning class."""
+    try:
+        from openai import OpenAI
+
+        if not settings.LLM_API_KEY and settings.LLM_API_BASE_URL == "http://localhost:11434/v1":
+            client = OpenAI(
+                base_url=settings.LLM_API_BASE_URL,
+                api_key="not-needed",
+                timeout=settings.LLM_TIMEOUT,
+            )
+        elif settings.LLM_API_KEY:
+            client = OpenAI(
+                base_url=settings.LLM_API_BASE_URL,
+                api_key=settings.LLM_API_KEY,
+                timeout=settings.LLM_TIMEOUT,
+            )
+        else:
+            return None
+    except Exception:
+        return None
+
+    classes = ", ".join(c.value for c in BugReasoningClass)
+    story_context = ""
+    if story:
+        story_context = (
+            f"\nRelated Story: {story.title}\n"
+            f"Acceptance Criteria: {story.acceptance_criteria or 'Not specified'}\n"
+        )
+
+    prompt = f"""Classify this bug into one reasoning class.
+
+Bug: {bug.summary}
+Description: {bug.description or 'N/A'}
+Severity: {bug.severity.value}
+{story_context}
+
+Classes: {classes}
+- silly_miss: easily avoidable oversight, typo, careless slip
+- critical_miss: serious defect in core logic, security, or data handling
+- info_not_in_story: story didn't contain needed information
+- missing_unit_test: developer shipped without unit coverage for this path
+- wrong_test_cases: BA/tester test cases were wrong or missed the scenario
+
+Respond in this exact format:
+REASONING_CLASS: [one class]
+CONFIDENCE: [0.0 to 1.0]
+EXPLANATION: [1 sentence]"""
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.LLM_MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You classify software bugs by their reasoning class. Be precise."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=150,
+        )
+        text = response.choices[0].message.content
+        return _parse_reasoning_class_response(text)
+    except Exception as e:
+        logger.warning(f"LLM reasoning class suggestion failed: {e}")
+        return None
+
+
+def _parse_reasoning_class_response(text: str) -> Optional[dict]:
+    """Parse LLM reasoning class response."""
+    try:
+        parsed = {}
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("REASONING_CLASS:"):
+                parsed["class"] = line.split(":", 1)[1].strip().lower()
+            elif line.startswith("CONFIDENCE:"):
+                try:
+                    parsed["confidence"] = float(line.split(":", 1)[1].strip())
+                except ValueError:
+                    parsed["confidence"] = 0.5
+            elif line.startswith("EXPLANATION:"):
+                parsed["explanation"] = line.split(":", 1)[1].strip()
+
+        class_map = {c.value: c for c in BugReasoningClass}
+        reasoning_class = class_map.get(parsed.get("class", ""))
+        if not reasoning_class:
+            return None
+
+        return {
+            "reasoning_class": reasoning_class.value,
+            "confidence": min(max(parsed.get("confidence", 0.5), 0.0), 1.0),
+            "explanation": parsed.get("explanation", "LLM-based classification"),
+            "method": "llm",
+        }
+    except Exception:
+        return None
+
+
+def _keyword_suggest_reasoning_class(bug: Bug) -> dict:
+    """Keyword-based reasoning class suggestion (fallback)."""
+    text = f"{bug.summary} {bug.description or ''}".lower()
+
+    best_class = BugReasoningClass.SILLY_MISS
+    best_score = 0.0
+
+    for reasoning_class, keywords in REASONING_CLASS_KEYWORDS.items():
+        matches = sum(1 for kw in keywords if kw in text)
+        score = matches / len(keywords) if keywords else 0
+        if score > best_score:
+            best_score = score
+            best_class = reasoning_class
+
+    confidence = min(best_score * 2.5, 0.9) if best_score > 0 else 0.15
+
+    return {
+        "reasoning_class": best_class.value,
+        "confidence": round(confidence, 2),
+        "explanation": f"Keyword analysis matched '{best_class.value}' pattern "
+                       f"with {round(confidence * 100)}% confidence.",
+        "method": "keyword_rules",
+    }

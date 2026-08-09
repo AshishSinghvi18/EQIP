@@ -82,6 +82,23 @@ class RootCauseCategory(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+class BugReasoningClass(str, enum.Enum):
+    """Bug-reasoning classes (Design Spec §7.4)."""
+    SILLY_MISS = "silly_miss"
+    CRITICAL_MISS = "critical_miss"
+    INFO_NOT_IN_STORY = "info_not_in_story"
+    MISSING_UNIT_TEST = "missing_unit_test"
+    WRONG_TEST_CASES = "wrong_test_cases"
+
+
+class QualityClass(str, enum.Enum):
+    """Story quality classification (Design Spec §4.7)."""
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
 class OriginStage(str, enum.Enum):
     REQUIREMENT = "requirement"
     DEVELOPMENT = "development"
@@ -236,12 +253,25 @@ class Story(Base):
     release = Column(String(100), nullable=True)
     environment = Column(String(100), nullable=True)
     documentation = Column(Text, nullable=True)
+    # v1.1 onboarding data gate fields (§4.8, §8.1)
+    description = Column(Text, nullable=True)
+    screenshots = Column(JSON, nullable=True)  # list of screenshot references
+    unit_test_cases = Column(JSON, nullable=True)  # from developers
+    ba_test_cases = Column(JSON, nullable=True)  # from BA/testers
+    escalations = Column(JSON, nullable=True)  # list of escalation records
+    onboarding_complete = Column(Boolean, default=False)
+    completeness_gaps = Column(JSON, nullable=True)  # list of missing data points
+    # v1.1 derived fields (§4.6, §4.7)
+    story_rollup = Column(Float, nullable=True)  # avg of role scores, display-only
+    quality_class = Column(Enum(QualityClass), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     project = relationship("Project", back_populates="stories")
     sprint = relationship("Sprint", back_populates="stories")
     bugs = relationship("Bug", back_populates="story")
     attachments_rel = relationship("Attachment", back_populates="story")
+    role_story_scores = relationship("PerRoleStoryScore", back_populates="story")
+    story_class_record = relationship("StoryClassRecord", back_populates="story", uselist=False)
 
 
 class Bug(Base):
@@ -272,6 +302,9 @@ class Bug(Base):
     ai_confidence = Column(Float, nullable=True)
     human_approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     human_approved_at = Column(DateTime, nullable=True)
+    # v1.1 bug-reasoning class (§7.4, §8.2)
+    reasoning_class = Column(Enum(BugReasoningClass), nullable=True)
+    reasoning_class_approved = Column(Boolean, default=False)
 
     story = relationship("Story", back_populates="bugs")
 
@@ -458,3 +491,43 @@ class QualityForecast(Base):
     factors = Column(JSON, nullable=True)  # contributing risk factors
     recommendations = Column(JSON, nullable=True)  # mitigation actions
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PerRoleStoryScore(Base):
+    """Per-role story score (Design Spec §4.6, §8.6).
+
+    One row per participating role per story. Each role starts at 10.0 and
+    loses points only for their own attributed faults. Never overwritten;
+    replayable from quality events.
+    """
+
+    __tablename__ = "per_role_story_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    story_id = Column(Integer, ForeignKey("stories.id"), nullable=False, index=True)
+    role = Column(Enum(UserRole), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    score = Column(Float, nullable=False, default=10.0)  # 0.0–10.0
+    breakdown = Column(JSON, nullable=True)  # list of deductions on this story
+    computed_at = Column(DateTime, default=datetime.utcnow)
+
+    story = relationship("Story", back_populates="role_story_scores")
+
+
+class StoryClassRecord(Base):
+    """Story classification record (Design Spec §4.7, §8.6b).
+
+    Derived from escalation/serious-bug gates and per-role score rollup.
+    """
+
+    __tablename__ = "story_class_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    story_id = Column(Integer, ForeignKey("stories.id"), nullable=False, unique=True, index=True)
+    quality_class = Column(Enum(QualityClass), nullable=False)
+    rollup = Column(Float, nullable=True)  # avg of role scores, display-only
+    serious_bug_count = Column(Integer, default=0)
+    escalation_count = Column(Integer, default=0)
+    computed_at = Column(DateTime, default=datetime.utcnow)
+
+    story = relationship("Story", back_populates="story_class_record")
